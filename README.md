@@ -1,25 +1,28 @@
-# English Training Hub V3 — Functional Preview
+# English Training Hub V3 — Learning Architecture
 
-Pacote estático para publicar dentro de `/v3/` no GitHub Pages.
+Versão funcional com cinco perfis locais independentes: Tacio, Marlene, Anny, Teste 1 e Teste 2. O PIN provisório de teste é `1234`.
 
-## Publicação
+## Arquitetura pedagógica
 
-Substitua o conteúdo atual da pasta `v3` pelos arquivos deste pacote, mantendo a estrutura. Faça commit e aguarde a atualização do GitHub Pages. Se o navegador mostrar a versão antiga, feche o app instalado, abra a URL no navegador, recarregue uma vez e reabra o app.
+1. Inglês cotidiano
+2. Destravar a fala
+3. Listening, Speaking, Reading e Writing integrados
+4. Inglês profissional: entrevista, enfermagem, emergência/APH e offshore
+5. Independência, velocidade e automaticidade
+
+O motor cria sessões de oito atividades com duas tarefas por competência, registra precisão, tempo, independência, domínio, confiança e automaticidade e reinsere revisões relacionadas aos erros. Todo o progresso permanece no IndexedDB do dispositivo, separado por perfil.
 
 ## Teste de aceite
 
-1. Abra `v3/` e confirme os cinco indicadores no dashboard.
-2. Toque em **TREINAR AGORA**.
-3. Complete Listening, Speaking, Reading e Writing.
-4. Em Listening, teste o áudio e a repetição.
-5. Em Speaking, permita o microfone. Se o recurso não existir, digite a resposta.
-6. Erre deliberadamente uma resposta e confirme a mensagem de revisão adaptativa.
-7. Conclua a sessão e confira precisão, tempo e automaticidade.
-8. Feche e reabra: o histórico e uma sessão incompleta devem continuar disponíveis.
+1. Entre com cada perfil usando o PIN `1234` e confirme o isolamento dos dados.
+2. Complete uma sessão com as quatro competências.
+3. Erre uma resposta e confirme a inserção da revisão adaptativa.
+4. Feche e reabra o app para validar a persistência.
+5. Confirme áudio, reconhecimento de fala ou a alternativa digitada.
 
-## Limites desta preview
+## Limites
 
-- O áudio usa a voz inglesa do navegador (`SpeechSynthesis`), portanto timbre e disponibilidade variam.
-- A fala usa Web Speech API quando disponível e requer HTTPS/permissão de microfone.
-- Writing e Speaking usam correspondência por palavras-chave e sobreposição de vocabulário; a nota é parcial, não uma avaliação semântica por IA.
-- Os dados ficam somente no IndexedDB do navegador/dispositivo e não são sincronizados.
+- O áudio usa a voz inglesa do navegador.
+- A fala depende da Web Speech API, HTTPS e permissão de microfone.
+- Writing e Speaking usam palavras-chave e sobreposição de vocabulário, sem IA externa.
+- Os dados não são sincronizados entre dispositivos.

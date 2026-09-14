@@ -4,24 +4,40 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#071a2b">
-  <meta name="description" content="Treino adaptativo de inglês geral, clínico, APH, entrevistas e offshore.">
+  <meta name="description" content="English Training Hub V3 — currículo A1–B2, prática específica, construção de frases e aprendizagem adaptativa.">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
   <link rel="stylesheet" href="./css/styles.css">
   <link rel="stylesheet" href="./css/builder.css">
   <link rel="stylesheet" href="./css/pilot.css">
+  <link rel="stylesheet" href="./css/rebuild.css">
   <title>English Training Hub V3</title>
 </head>
 <body>
   <header class="topbar"><div><span class="eyebrow">LEARNING ARCHITECTURE</span><h1>English Training Hub <b>V3</b></h1></div><button id="installBtn" class="ghost hidden">Instalar</button></header>
   <main id="app" class="shell" aria-live="polite"></main>
-  <footer><span id="storageState">Escolha um perfil para começar</span><span>Dados somente neste dispositivo</span></footer>
+  <footer><span id="storageState">Dados locais por perfil</span><span>Rebuild 3.1</span></footer>
+
+  <!-- Dados curriculares já existentes: preservar -->
   <script src="./js/foundation.js"></script>
   <script src="./js/curriculum-a.js"></script>
   <script src="./js/curriculum-b.js"></script>
   <script src="./js/curriculum.js"></script>
   <script src="./js/content.js"></script>
+
+  <!-- Nova camada modular -->
+  <script src="./js/config.js"></script>
+  <script src="./js/database.js"></script>
+  <script src="./js/validators.js"></script>
+  <script src="./js/metrics.js"></script>
+  <script src="./js/adaptive-engine.js"></script>
+  <script src="./js/practice-bank.js"></script>
+  <script src="./js/b2-extended.js"></script>
+  <script src="./js/mastery-engine.js"></script>
+  <script src="./js/content-rebuild.js"></script>
+  <script src="./js/session-engine.js"></script>
+  <script src="./js/exercise-renderer.js"></script>
   <script src="./js/app.js"></script>
 </body>
 </html>

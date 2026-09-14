@@ -1,0 +1,30 @@
+{
+  "package": "English Training Hub V3 Rebuild",
+  "version": "3.1.0-rebuild",
+  "replace": [
+    "index.html",
+    "sw.js",
+    "js/app.js"
+  ],
+  "add": [
+    "css/rebuild.css",
+    "js/config.js",
+    "js/database.js",
+    "js/validators.js",
+    "js/metrics.js",
+    "js/adaptive-engine.js",
+    "js/practice-bank.js",
+    "js/b2-extended.js",
+    "js/mastery-engine.js",
+    "js/content-rebuild.js",
+    "js/session-engine.js",
+    "js/exercise-renderer.js"
+  ],
+  "preserve": [
+    "js/foundation.js",
+    "js/curriculum-a.js",
+    "js/curriculum-b.js",
+    "js/curriculum.js",
+    "js/content.js"
+  ]
+}

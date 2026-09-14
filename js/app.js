@@ -1,72 +1,143 @@
 (() => {
   'use strict';
-  const DB='english-hub-v3', STORE='state', LEGACY_KEY='main', SESSION_SIZE=8;
-  const PROFILES=[
-    {id:'tacio',name:'Tacio',role:'student'},
-    {id:'marlene',name:'Marlene',role:'student'},
-    {id:'anny',name:'Anny',role:'student'},
-    {id:'teste-1',name:'Teste 1',role:'student'},
-    {id:'teste-2',name:'Teste 2',role:'student'},
-    {id:'professora',name:'Professora',role:'teacher'}
-  ];
-  const STAGES=[
-    {id:1,name:'Bloco Fundamental',hint:'Domine os 80 construtores cotidianos antes de ampliar a fala'},
-    {id:2,name:'A1 · Destravar a fala',hint:'Consolide o A1 com repetição, construção e fala guiada'},
-    {id:3,name:'A2 · Comunicação cotidiana',hint:'Integre as quatro competências em situações reais'},
-    {id:4,name:'B1 · Fluência funcional',hint:'Sustente narrativas, opiniões e tarefas profissionais'},
-    {id:5,name:'B2 · Independência',hint:'Argumente, negocie e responda com nuance e automaticidade'}
-  ];
-  const fresh=()=>({version:5,profileId:null,attempts:[],errors:[],sessions:[],contentReviews:[],activeSession:null,stage:1,createdAt:new Date().toISOString(),pilotStartedAt:null});
-  let state=fresh(), activeProfile=null, deferredInstall=null, startedAt=0, currentAnswer='', usedHelp=false, confidence=3, recognition=null;
-  const $=s=>document.querySelector(s), app=()=>$('#app');
-  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
-  const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0, pct=n=>Math.round(n*100), time=n=>n?`${(n/1000).toFixed(1)}s`:'—';
-  function dbOpen(){return new Promise((res,rej)=>{const r=indexedDB.open(DB,1);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains(STORE))r.result.createObjectStore(STORE)};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
-  async function getKey(key){const db=await dbOpen();return new Promise((res,rej)=>{const r=db.transaction(STORE).objectStore(STORE).get(key);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
-  async function putKey(key,value){const db=await dbOpen();return new Promise((res,rej)=>{const r=db.transaction(STORE,'readwrite').objectStore(STORE).put(value,key);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
-  async function migrateLegacy(){const done=await getKey('profiles:migrated');if(done)return;const old=await getKey(LEGACY_KEY);if(old&&Array.isArray(old.attempts)){const migrated={...fresh(),...old,version:5,profileId:'tacio'};await putKey('profile:tacio',migrated)}await putKey('profiles:migrated',true)}
-  async function loadProfile(id){try{await migrateLegacy();activeProfile=PROFILES.find(p=>p.id===id);state={...fresh(),...(await getKey(`profile:${id}`)||{}),profileId:id};state.contentReviews=state.contentReviews||[];if(activeProfile.role==='teacher')state.stage=5;$('#storageState').textContent=`✓ Progresso de ${activeProfile.name} salvo neste dispositivo`;dashboard()}catch(e){console.error(e);$('#storageState').textContent='⚠ Armazenamento indisponível'}}
-  async function save(){if(activeProfile)await putKey(`profile:${activeProfile.id}`,state)}
-  function login(){activeProfile=null;app().innerHTML=`<section class="login"><div class="card"><span class="eyebrow">ESCOLHA QUEM VAI TREINAR OU AVALIAR</span><h2>Perfis do piloto</h2><p class="muted">Cada perfil mantém progresso, erros, sessões e avaliações separados neste dispositivo. Toque em um perfil para entrar.</p><div class="profiles">${PROFILES.map(p=>`<button class="profile" data-id="${p.id}"><span>${p.name.charAt(0)}</span><b>${p.name}</b><small>${p.role==='teacher'?'avaliadora':'aluno'}</small></button>`).join('')}</div><p class="muted small">Este site público não usa PIN. A separação dos perfis é local e não constitui autenticação.</p></div></section>`;
-    document.querySelectorAll('.profile').forEach(button=>button.onclick=()=>loadProfile(button.dataset.id));
+  const H=window.EnglishHub=window.EnglishHub||{};
+  let state=null, profile=null, session=null, startedAt=0, buildTokens=[];
+  const app=()=>document.getElementById('app');
+  const pct=n=>Math.round((Number(n)||0)*100)+'%';
+
+  function profiles(){
+    app().innerHTML=`<section class="login card"><span class="eyebrow">ENGLISH TRAINING HUB V3 · REBUILD</span>
+      <h2>Escolha o perfil</h2><p class="muted">Os dados permanecem separados neste dispositivo.</p>
+      <div class="profiles">${H.Config.profiles.map(p=>`<button class="profile" data-profile="${p.id}"><span>${p.name[0]}</span>${p.name}</button>`).join('')}</div></section>`;
+    document.querySelectorAll('[data-profile]').forEach(b=>b.onclick=()=>login(b.dataset.profile));
   }
-  function attemptsFor(skill){return state.attempts.filter(a=>a.skill===skill)}
-  function metric(skill){const a=attemptsFor(skill);if(!a.length)return{accuracy:0,mastery:0,automaticity:0,responseTime:0};const recent=a.slice(-12),accuracy=avg(recent.map(x=>x.accuracy)),speed=avg(recent.map(x=>Math.max(0,1-x.responseTime/(x.targetTime||45000)))),independence=avg(recent.map(x=>x.independence)),conf=avg(recent.map(x=>x.confidence/5));return{accuracy,mastery:.55*accuracy+.25*independence+.2*conf,automaticity:.45*accuracy+.35*speed+.2*independence,responseTime:avg(recent.map(x=>x.responseTime))}}
-  function foundationStats(){const attempts=state.attempts.filter(a=>/^B\d{3}$/.test(a.targetId||a.exerciseId)),recent=attempts.filter(a=>a.variant==='build'||/^B\d{3}$/.test(a.exerciseId)).slice(-40),unique=new Set(attempts.map(a=>a.targetId||a.exerciseId)).size,accuracy=avg(recent.map(a=>a.accuracy));return{attempts:attempts.length,unique,accuracy,band:unique<12?1:unique<30?2:unique<50?3:4}}
-  function levelStats(level){const attempts=state.attempts.filter(a=>{const ex=EXERCISES.find(x=>x.id===a.exerciseId);return ex?.level===level&&/^C/.test(ex.targetId||'')});const recent=attempts.slice(-80);return{unique:new Set(attempts.map(a=>a.targetId||a.exerciseId)).size,accuracy:avg(recent.map(a=>a.accuracy))}}
-  function retention(days){const minimum=days*86400000,eligible=[],grouped={};state.attempts.forEach(a=>{const key=a.targetId||a.exerciseId;(grouped[key]||(grouped[key]=[])).push(a)});Object.values(grouped).forEach(items=>items.sort((a,b)=>new Date(a.at)-new Date(b.at)).forEach((item,index)=>{if(index&&new Date(item.at)-new Date(items[index-1].at)>=minimum)eligible.push(item.accuracy)}));return{count:eligible.length,rate:avg(eligible)}}
-  function pilotStats(){const start=new Date(state.pilotStartedAt||state.createdAt),elapsed=Math.max(0,Date.now()-start.getTime());return{week:Math.min(12,Math.floor(elapsed/604800000)+1),days:new Set(state.attempts.map(a=>new Date(a.at).toISOString().slice(0,10))).size,minutes:Math.round(state.attempts.reduce((sum,a)=>sum+a.responseTime,0)/60000),d1:retention(1),d7:retention(7),d21:retention(21)}}
-  function stageProgress(){const skills=['listening','speaking','reading','writing'],mastery=avg(skills.map(s=>metric(s).mastery)),sessions=state.sessions.length,foundation=foundationStats(),a1=levelStats('A1'),a2=levelStats('A2'),b1=levelStats('B1');let stage=1;if(sessions>=6&&foundation.unique>=24&&foundation.accuracy>=.65)stage=2;if(sessions>=18&&a1.unique>=60&&a1.accuracy>=.65)stage=3;if(sessions>=36&&a2.unique>=90&&a2.accuracy>=.68)stage=4;if(sessions>=60&&b1.unique>=80&&b1.accuracy>=.70)stage=5;state.stage=activeProfile?.role==='teacher'?5:Math.max(state.stage||1,stage);return{stage:state.stage,mastery,foundation,a1,a2,b1}}
-  function stageRequirement(stage,sp){if(stage===1)return `Para liberar o A1 com fala guiada: ${sp.foundation.unique}/24 frases · ${state.sessions.length}/6 sessões · ${pct(sp.foundation.accuracy)}/65% de precisão.`;if(stage===2)return `Para liberar o A2: ${sp.a1.unique}/60 estruturas A1 · ${state.sessions.length}/18 sessões · ${pct(sp.a1.accuracy)}/65%.`;if(stage===3)return `Para liberar o B1: ${sp.a2.unique}/90 estruturas A2 · ${state.sessions.length}/36 sessões · ${pct(sp.a2.accuracy)}/68%.`;if(stage===4)return `Para liberar o B2: ${sp.b1.unique}/80 estruturas B1 · ${state.sessions.length}/60 sessões · ${pct(sp.b1.accuracy)}/70%.`;return 'Matriz A1–B2 liberada: mantenha revisões D1, D7 e D21.'}
-  function sessionDescription(stage){return stage===1?'Os 80 construtores permanecem como primeiro bloco, sem fala livre.':stage===2?'Agora as estruturas A1 entram em fala guiada, escrita, leitura e escuta.':'As sessões combinam conteúdo novo e revisões espaçadas conforme seu desempenho.'}
-  function retentionLabel(item){return item.count?`${pct(item.rate)}% (${item.count})`:'aguardando dados'}
-  function dashboard(){const skills=['listening','speaking','reading','writing'],labels={listening:'Listening',speaking:'Speaking',reading:'Reading',writing:'Writing'},auto=avg(skills.map(s=>metric(s).automaticity)),last=state.sessions.slice(-5).reverse(),sp=stageProgress(),stage=STAGES[sp.stage-1],pilot=pilotStats();
-    app().innerHTML=`<section class="profilebar"><div><span class="muted">Perfil ativo · ${activeProfile.role==='teacher'?'avaliadora':'aluno'}</span><b>${esc(activeProfile.name)}</b></div><button class="ghost" id="switch">Trocar usuário</button></section><section class="hero"><div class="card"><span class="eyebrow">ETAPA ${stage.id} DE 5 · ${stage.name.toUpperCase()}</span><h2>Treine para responder<br><span class="accent">sem traduzir.</span></h2><p class="muted">${stage.hint}. ${sessionDescription(stage.id)}</p><button id="train">${state.activeSession?'CONTINUAR TREINO':'TREINAR AGORA'}</button></div><div class="card stage-card"><span class="muted">Automaticidade geral</span><strong class="giant">${pct(auto)}%</strong><div class="bar"><i style="width:${pct(auto)}%"></i></div><p class="muted">${state.attempts.length} respostas · ${state.errors.length} erros registrados</p></div></section><div class="metrics">${skills.map(s=>metricCard(labels[s],metric(s).mastery)).join('')}${metricCard('Automaticidade',auto)}</div><div class="section-title"><h3>Jornada A1–B2</h3><span class="muted">Etapa atual: ${stage.id}/5</span></div><div class="journey">${STAGES.map(s=>`<div class="journey-step ${s.id<stage.id?'done':s.id===stage.id?'active':''}"><b>${s.id}. ${s.name}</b><span>${s.id<stage.id?'Concluída':s.id===stage.id?'Em andamento':'Bloqueada'}</span></div>`).join('')}</div><div class="section-title"><h3>Piloto longitudinal</h3><span class="muted">12 semanas</span></div><div class="card pilot"><div class="pilot-grid"><span>Semana <b>${pilot.week}/12</b></span><span>Dias estudados <b>${pilot.days}</b></span><span>Tempo ativo <b>${pilot.minutes} min</b></span><span>Avaliações <b>${state.contentReviews.length}</b></span></div><div class="retention"><span>Retenção D1: <b>${retentionLabel(pilot.d1)}</b></span><span>D7: <b>${retentionLabel(pilot.d7)}</b></span><span>D21: <b>${retentionLabel(pilot.d21)}</b></span></div><div class="tools"><button class="ghost" id="exportJson">EXPORTAR RELATÓRIO JSON</button><button class="ghost" id="exportCsv">EXPORTAR TENTATIVAS CSV</button></div></div><div class="section-title"><h3>Histórico recente</h3><span class="muted">${state.sessions.length} sessões</span></div><div class="history">${last.length?last.map(s=>`<div class="history-row"><span>${new Date(s.endedAt).toLocaleDateString('pt-BR')} · ${s.count} atividades</span><b>${pct(s.accuracy)}% acerto</b><span>${time(s.avgTime)}</span><span>${pct(s.automaticity)}% automático</span></div>`).join(''):'<div class="card muted">O primeiro resumo aparecerá aqui.</div>'}</div><div class="section-title"><h3>Privacidade e teste</h3></div><div class="card"><p>O progresso de ${esc(activeProfile.name)} fica separado neste navegador. Exporte os dados semanalmente para comparar com a professora.</p><button class="ghost danger" id="reset">Apagar progresso deste perfil</button></div>`;
-    document.querySelector('.hero .card p.muted').insertAdjacentHTML('afterend',`<p class="unlock">${esc(stageRequirement(stage.id,sp))}</p>`);
-    $('#train').onclick=()=>state.activeSession?showExercise():startSession();$('#reset').onclick=reset;$('#switch').onclick=login;$('#exportJson').onclick=exportJson;$('#exportCsv').onclick=exportCsv;save();
+  async function login(id){
+    profile=H.Config.profiles.find(p=>p.id===id);
+    state=await H.DB.loadProfile(id);
+    if(profile.role==='teacher') state.stage=5;
+    else state.stage=Math.max(state.stage||1,H.Metrics.progress(state).stage);
+    await H.DB.saveProfile(state); dashboard();
   }
-  function metricCard(name,value){return `<div class="card metric"><span class="muted">${name}</span><strong>${pct(value)}%</strong><div class="bar"><i style="width:${pct(value)}%"></i></div></div>`}
-  function allowedExercise(ex){const stage=state.stage||1;if(ex.stage>stage)return false;if(stage===1&&ex.band&&ex.band>foundationStats().band)return false;return true}
-  function weakness(ex){const m=metric(ex.skill),domainErrors=state.errors.filter(e=>e.domain===ex.domain).length,target=ex.targetId||ex.id,last=state.attempts.filter(a=>(a.targetId||a.exerciseId)===target).slice(-1)[0];let review=last?0:1.5;if(last){const age=Date.now()-new Date(last.at).getTime();if(last.accuracy<.7)review=age>=86400000?3:1.4;else if(age>=21*86400000)review=3.1;else if(age>=7*86400000)review=2.2;else if(age>=86400000)review=1.2}return(1-m.mastery)*4+domainErrors*.15+review+(ex.stage===state.stage?.35:0)+Math.random()*.2}
-  function buildQueue(){const stage=state.stage||1,order=['listening','reading','writing','speaking'],plan=stage===1?{listening:1,reading:1,writing:6,speaking:0}:stage===2?{listening:2,reading:1,writing:1,speaking:4}:{listening:2,reading:2,writing:2,speaking:2},selected=[],usedTargets=new Set();order.forEach(skill=>{const pool=EXERCISES.filter(x=>x.skill===skill&&allowedExercise(x)).sort((a,b)=>weakness(b)-weakness(a));for(let slot=0;slot<plan[skill];slot++){const next=pool.find(x=>!selected.includes(x)&&!usedTargets.has(x.targetId||x.id))||pool.find(x=>!selected.includes(x));if(!next)break;selected.push(next);usedTargets.add(next.targetId||next.id)}});return selected.slice(0,SESSION_SIZE).sort((a,b)=>order.indexOf(a.skill)-order.indexOf(b.skill)).map(x=>x.id)}
-  async function startSession(){if(!state.pilotStartedAt)state.pilotStartedAt=new Date().toISOString();state.activeSession={id:crypto.randomUUID?.()||String(Date.now()),queue:buildQueue(),index:0,attemptIds:[],startedAt:new Date().toISOString()};await save();showExercise()}
-  function current(){return EXERCISES.find(x=>x.id===state.activeSession.queue[state.activeSession.index])}
-  function showExercise(){const ex=current();if(!ex)return finish();currentAnswer='';usedHelp=false;confidence=3;startedAt=performance.now();const idx=state.activeSession.index;app().innerHTML=`<section class="session"><div class="session-head"><span>${esc(activeProfile.name)} · Etapa ${state.stage}</span><button class="ghost" id="exit">Salvar e sair</button></div><div class="progress">${state.activeSession.queue.map((_,i)=>`<i class="${i<idx?'done':''}"></i>`).join('')}</div><div class="card"><span class="skill-tag">${icon(ex.skill)} ${ex.skill} · ${ex.domain} · ${ex.variant||'original'}</span><div class="prompt">${esc(ex.prompt||ex.text||'Ouça e responda:')}</div>${ex.audio?`<div class="tools"><button class="audio-btn" id="play">▶ OUVIR ÁUDIO</button><button class="ghost" id="replay">Ouvir novamente</button></div>`:''}${ex.tokens?.length?`<div class="sentence-builder"><div id="built" class="built muted">Toque nas palavras abaixo</div><div class="word-bank">${ex.tokens.map((t,i)=>`<button class="word" data-index="${i}" data-word="${esc(t)}">${esc(t)}</button>`).join('')}</div><button class="ghost" id="clearWords">Limpar frase</button></div>`:ex.choices.length?`<div class="choice-list">${ex.choices.map(c=>`<button class="choice" data-value="${esc(c)}">${esc(c)}</button>`).join('')}</div>`:`<textarea class="answer" id="answer" placeholder="${ex.skill==='speaking'?'Fale ou digite sua resposta em inglês…':'Digite sua resposta em inglês…'}"></textarea>${ex.skill==='speaking'?`<div class="tools"><button class="speak-btn" id="speak">● COMEÇAR A FALAR</button><span id="speechStatus" class="muted"></span></div>`:''}`}<label class="checkbox"><input type="checkbox" id="help"> Usei tradução, dica ou ajuda externa</label><label class="muted">Confiança: <input id="confidence" type="range" min="1" max="5" value="3"> <b id="confidenceValue">3/5</b></label><div class="tools"><button id="check" disabled>CORRIGIR</button></div></div></section>`;
-    if(ex.audio){$('#play').onclick=()=>speakText(ex.audio);$('#replay').onclick=()=>{usedHelp=true;speakText(ex.audio)}}document.querySelectorAll('.choice').forEach(b=>b.onclick=()=>{document.querySelectorAll('.choice').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');currentAnswer=b.dataset.value;$('#check').disabled=false});if(ex.tokens?.length){document.querySelectorAll('.word').forEach(b=>b.onclick=()=>{currentAnswer=`${currentAnswer} ${b.dataset.word}`.trim();b.disabled=true;$('#built').textContent=currentAnswer;$('#built').classList.remove('muted');$('#check').disabled=false});$('#clearWords').onclick=()=>{currentAnswer='';$('#built').textContent='Toque nas palavras abaixo';$('#built').classList.add('muted');document.querySelectorAll('.word').forEach(b=>b.disabled=false);$('#check').disabled=true}}if($('#answer'))$('#answer').oninput=e=>{currentAnswer=e.target.value;$('#check').disabled=!currentAnswer.trim()};if($('#speak'))$('#speak').onclick=startRecognition;$('#help').onchange=e=>usedHelp=e.target.checked;$('#confidence').oninput=e=>{$('#confidenceValue').textContent=`${e.target.value}/5`;confidence=+e.target.value};$('#check').onclick=()=>check(ex);$('#exit').onclick=()=>{save();dashboard()};
+  function metricCard(skill){
+    const m=H.Metrics.skill(state,skill);
+    return `<div class="card metric"><span>${H.Config.skillLabels[skill]}</span><strong>${pct(m.mastery)}</strong>
+      <small>${m.count} tentativas</small><div class="bar"><i style="width:${pct(m.mastery)}"></i></div></div>`;
   }
-  function scoreText(input,ex){const n=norm(input),target=norm(ex.answer),keys=ex.keywords.map(norm),hits=keys.filter(k=>n.includes(k)).length,keyScore=keys.length?hits/keys.length:0,targetWords=new Set(target.split(' ')),words=n.split(' ').filter(Boolean),overlap=words.filter(w=>targetWords.has(w)).length/Math.max(targetWords.size,1);return Math.min(1,.75*keyScore+.25*overlap)}
-  async function check(ex){const elapsed=Math.round(performance.now()-startedAt),accuracy=(ex.choices.length||ex.tokens?.length)?(norm(currentAnswer)===norm(ex.answer)?1:0):scoreText(currentAnswer,ex),independence=usedHelp?.55:1,targetTime=ex.targetTime||45000,speed=Math.max(0,1-elapsed/targetTime),mastery=.55*accuracy+.25*independence+.2*(confidence/5),automaticity=.45*accuracy+.35*speed+.2*independence,attempt={id:crypto.randomUUID?.()||String(Date.now()),exerciseId:ex.id,targetId:ex.targetId||ex.id,variant:ex.variant||'original',stage:state.stage,skill:ex.skill,domain:ex.domain,answer:currentAnswer,expected:ex.answer,accuracy,responseTime:elapsed,targetTime,independence,mastery,confidence,automaticity,at:new Date().toISOString()};state.attempts.push(attempt);state.activeSession.attemptIds.push(attempt.id);const previousError=state.errors.find(e=>e.exerciseId===ex.id);if(accuracy<.7){if(previousError)Object.assign(previousError,{...attempt,errorId:previousError.errorId,count:(previousError.count||1)+1});else state.errors.push({...attempt,errorId:attempt.id,count:1})}else if(previousError)state.errors=state.errors.filter(e=>e.exerciseId!==ex.id);const weak=accuracy<.7;if(weak){const review=EXERCISES.filter(x=>x.domain===ex.domain&&x.id!==ex.id&&allowedExercise(x)).sort((a,b)=>weakness(b)-weakness(a))[0];if(review&&!state.activeSession.queue.slice(state.activeSession.index+1).includes(review.id))state.activeSession.queue.splice(Math.min(state.activeSession.index+3,state.activeSession.queue.length),0,review.id)}await save();const card=document.querySelector('.session .card');card.insertAdjacentHTML('beforeend',`<div class="feedback ${weak?'bad':''}"><b>${weak?'Ainda não consolidado':'Boa resposta'}</b><p>Sua resposta: ${esc(currentAnswer)}</p><p>Modelo: <strong>${esc(ex.answer)}</strong></p><div class="score-grid"><span>Acerto <b>${pct(accuracy)}%</b></span><span>Tempo <b>${time(elapsed)}</b></span><span>Automaticidade <b>${pct(automaticity)}%</b></span></div>${weak?'<p class="muted">Uma revisão relacionada foi inserida nesta sessão.</p>':''}</div><div class="tools">${activeProfile.role==='teacher'?'<button class="ghost" id="reviewContent">AVALIAR CONTEÚDO</button>':''}<button id="next">PRÓXIMA ATIVIDADE</button></div>`);$('#check').disabled=true;if($('#reviewContent'))$('#reviewContent').onclick=()=>reviewContent(ex);$('#next').onclick=async()=>{state.activeSession.index++;await save();showExercise()}}
-  async function reviewContent(ex){const raw=prompt('Nota pedagógica de 1 a 5 para esta atividade:','5');if(raw===null)return;const rating=Number(raw);if(!Number.isInteger(rating)||rating<1||rating>5)return alert('Digite uma nota inteira de 1 a 5.');const note=prompt('Comentário da professora sobre clareza, dificuldade ou correção:','')||'';state.contentReviews.push({id:crypto.randomUUID?.()||String(Date.now()),exerciseId:ex.id,targetId:ex.targetId||ex.id,variant:ex.variant||'original',rating,note,at:new Date().toISOString()});await save();$('#reviewContent').disabled=true;$('#reviewContent').textContent='AVALIAÇÃO SALVA'}
-  function download(filename,content,type){const url=URL.createObjectURL(new Blob([content],{type})),link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
-  function exportJson(){const report={protocol:'English Training V3 · piloto longitudinal v1',pilotWeeks:12,curriculum:window.CURRICULUM_MATRIX,exportedAt:new Date().toISOString(),profile:{id:activeProfile.id,name:activeProfile.name,role:activeProfile.role},summary:{...pilotStats(),stage:state.stage,sessions:state.sessions.length,attempts:state.attempts.length,errors:state.errors.length,reviews:state.contentReviews.length},data:state};download(`english-training-${activeProfile.id}-${new Date().toISOString().slice(0,10)}.json`,JSON.stringify(report,null,2),'application/json')}
-  function csvCell(value){const text=String(value??'');return/[",\n]/.test(text)?`"${text.replace(/"/g,'""')}"`:text}
-  function exportCsv(){const fields=['id','at','exerciseId','targetId','variant','stage','skill','domain','answer','expected','accuracy','responseTime','targetTime','independence','mastery','confidence','automaticity'],rows=[fields.join(','),...state.attempts.map(a=>fields.map(field=>csvCell(a[field])).join(','))];download(`english-training-${activeProfile.id}-${new Date().toISOString().slice(0,10)}.csv`,rows.join('\n'),'text/csv;charset=utf-8')}
-  async function finish(){const ids=state.activeSession.attemptIds,a=state.attempts.filter(x=>ids.includes(x.id)),summary={id:state.activeSession.id,startedAt:state.activeSession.startedAt,endedAt:new Date().toISOString(),count:a.length,accuracy:avg(a.map(x=>x.accuracy)),avgTime:avg(a.map(x=>x.responseTime)),automaticity:avg(a.map(x=>x.automaticity))};state.sessions.push(summary);state.activeSession=null;stageProgress();await save();app().innerHTML=`<section class="session"><div class="card summary"><span class="eyebrow">SESSÃO CONCLUÍDA · ${esc(activeProfile.name)}</span><div class="big">${pct(summary.accuracy)}%</div><h2>Precisão da sessão</h2><div class="score-grid"><div class="card"><span class="muted">Tempo médio</span><h3>${time(summary.avgTime)}</h3></div><div class="card"><span class="muted">Automaticidade</span><h3>${pct(summary.automaticity)}%</h3></div><div class="card"><span class="muted">Atividades</span><h3>${summary.count}</h3></div></div><p class="muted">O próximo treino combinará conteúdo novo com revisões D1, D7 e D21.</p><button id="home">VER DASHBOARD</button></div></section>`;$('#home').onclick=dashboard}
-  function speakText(text){if(!('speechSynthesis'in window))return alert('Áudio não disponível neste navegador.');speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='en-US';u.rate=.88;speechSynthesis.speak(u)}
-  function startRecognition(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){$('#speechStatus').textContent='Reconhecimento não suportado; digite a resposta.';return}recognition=new SR();recognition.lang='en-US';recognition.interimResults=true;recognition.onstart=()=>{$('#speechStatus').textContent='Ouvindo…';$('#speak').textContent='■ PARAR'};recognition.onresult=e=>{currentAnswer=Array.from(e.results).map(r=>r[0].transcript).join(' ');$('#answer').value=currentAnswer;$('#check').disabled=!currentAnswer};recognition.onerror=e=>$('#speechStatus').textContent=`Não foi possível ouvir (${e.error}).`;recognition.onend=()=>{$('#speechStatus').textContent=currentAnswer?'Fala registrada.':'Toque para tentar novamente.';$('#speak').textContent='● COMEÇAR A FALAR'};recognition.start()}
-  function icon(s){return({listening:'◉',speaking:'●',reading:'▤',writing:'✎'})[s]}
-  async function reset(){if(!confirm(`Apagar todo o progresso de ${activeProfile.name}?`))return;state={...fresh(),profileId:activeProfile.id};await save();dashboard()}
-  window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;$('#installBtn').classList.remove('hidden')});$('#installBtn').onclick=async()=>{if(deferredInstall){deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;$('#installBtn').classList.add('hidden')}};
-  async function init(){login();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.error)}init();
+  function dashboard(){
+    const f=H.Metrics.foundation(state), audit=H.Content.audit(), mastery=H.Mastery.b2(state);
+    app().innerHTML=`<div class="profilebar"><div><b>${profile.name}</b><span class="muted small">${profile.role==='teacher'?'Professor':'Aluno'}</span></div><button class="ghost" id="logout">Trocar perfil</button></div>
+      <section class="hero">
+        <div class="card"><span class="eyebrow">SESSÃO ADAPTATIVA</span><h2>Treine o que mais precisa agora.</h2>
+          <p class="muted">Currículo A1–B2, construção de frases, quatro competências e revisão adaptativa.</p>
+          <div class="tools"><button id="trainNow">TREINAR AGORA</button><button class="ghost" id="practice">PRATICAR CONTEÚDO ESPECÍFICO</button></div></div>
+        <div class="card"><span class="eyebrow">BLOCO FUNDAMENTAL</span><span class="giant">${f.unique}/80</span><p>${pct(f.accuracy)} de precisão</p></div>
+      </section>
+      <div class="metrics">${['listening','speaking','reading','writing'].map(metricCard).join('')}<div class="card metric"><span>B2 Mastery</span><strong>${Math.round(mastery.ratio*100)}%</strong><small>${mastery.status}</small></div></div>
+      <div class="section-title"><h3>Ferramentas</h3></div>
+      <div class="action-grid">
+        <button class="card action-card" id="sentencePractice">Construção de frases</button>
+        <button class="card action-card" id="errors">Revisar meus erros</button>
+        <button class="card action-card" id="contentAudit">Auditoria do conteúdo</button>
+        <button class="card action-card" id="exportData">Exportar progresso</button>
+      </div>
+      <div id="auditPanel"></div>`;
+    document.getElementById('logout').onclick=()=>{state=null;profile=null;profiles()};
+    document.getElementById('trainNow').onclick=()=>start(H.Session.main(state));
+    document.getElementById('practice').onclick=practiceMenu;
+    document.getElementById('sentencePractice').onclick=()=>start(H.Session.practice(state,{topic:'Sentence Building',count:20}));
+    document.getElementById('errors').onclick=()=>start(H.Session.practice(state,{errorsOnly:true,count:20}));
+    document.getElementById('contentAudit').onclick=()=>showAudit(audit);
+    document.getElementById('exportData').onclick=exportData;
+  }
+  function practiceMenu(){
+    const stats=H.PracticeBank.stats;
+    app().innerHTML=`<button class="ghost" id="back">← Voltar</button><section class="card"><span class="eyebrow">PRÁTICA DIRECIONADA</span><h2>Escolha o conteúdo</h2>
+      <div class="practice-grid">${stats.map(s=>`<button class="practice-topic" data-topic="${H.Renderer.esc(s.topic)}">${H.Renderer.esc(s.topic)} <small>${s.count} itens</small></button>`).join('')}</div>
+      <h3>Quantidade</h3><div class="tools"><button class="count" data-count="10">10</button><button class="count" data-count="20">20</button><button class="count" data-count="50">50</button><button class="count" data-count="infinite">Treino contínuo</button></div>
+      <p class="muted">Selecione primeiro um tema e depois a quantidade.</p></section>`;
+    let topic=null;
+    document.getElementById('back').onclick=dashboard;
+    document.querySelectorAll('.practice-topic').forEach(b=>b.onclick=()=>{
+      topic=b.dataset.topic; document.querySelectorAll('.practice-topic').forEach(x=>x.classList.remove('selected')); b.classList.add('selected');
+    });
+    document.querySelectorAll('.count').forEach(b=>b.onclick=()=>{
+      if(!topic) return alert('Escolha um conteúdo.');
+      start(H.Session.practice(state,{topic,count:b.dataset.count}));
+    });
+  }
+  function start(s){
+    if(!s.items.length){alert('Ainda não há exercícios disponíveis para esse filtro.'); return;}
+    session=s; state.activeSession={id:s.id,mode:s.mode}; showExercise();
+  }
+  function showExercise(){
+    const ex=session.items[session.index];
+    buildTokens=[]; startedAt=performance.now();
+    app().innerHTML=`<section class="session"><div class="session-head"><span>${session.index+1}/${session.items.length}</span><button class="ghost" id="quit">Sair</button></div>
+      ${H.Renderer.render(ex)}</section>`;
+    document.getElementById('quit').onclick=dashboard;
+    if(document.getElementById('playAudio')) document.getElementById('playAudio').onclick=()=>H.Renderer.speak(ex.audio);
+    document.querySelectorAll('.choice').forEach(b=>b.onclick=()=>{
+      document.querySelectorAll('.choice').forEach(x=>x.classList.remove('selected')); b.classList.add('selected');
+    });
+    document.querySelectorAll('.token').forEach(b=>b.onclick=()=>{
+      buildTokens.push(b.dataset.token); b.disabled=true; document.getElementById('buildAnswer').textContent=buildTokens.join(' ');
+    });
+    document.getElementById('submitAnswer').onclick=submit;
+    document.getElementById('reportExercise').onclick=report;
+  }
+  function normalized(s){return String(s||'').toLowerCase().trim().replace(/[.,!?;:'"’]/g,'').replace(/\s+/g,' ')}
+  async function submit(){
+    const ex=session.items[session.index];
+    let answer='';
+    const selected=document.querySelector('.choice.selected');
+    if(selected) answer=selected.dataset.answer;
+    else if(ex.variant==='build') answer=buildTokens.join(' ');
+    else answer=document.getElementById('freeAnswer')?.value||'';
+    const elapsed=Math.round(performance.now()-startedAt);
+    const objective=Boolean(ex.answer);
+    let accuracy=.5;
+    if(objective) accuracy=normalized(answer)===normalized(ex.answer)?1:0;
+    const attempt={
+      exerciseId:ex.id,targetId:ex.targetId||ex.id,skill:ex.skill,topic:ex.topic,grammarTopic:ex.grammarTopic,
+      domain:ex.domain,level:ex.level,variant:ex.variant,accuracy,responseTime:elapsed,independence:1,
+      at:new Date().toISOString(),isReview:state.attempts.some(a=>a.exerciseId===ex.id)
+    };
+    state.attempts.push(attempt);
+    if(accuracy<.7) state.errors.push({exerciseId:ex.id,topic:ex.topic,domain:ex.domain,at:attempt.at});
+    const fb=document.getElementById('feedback');
+    fb.className='feedback '+(accuracy>=.7?'':'bad');
+    fb.innerHTML=accuracy>=.7?'<b>Correto.</b>':`<b>Revisar.</b>${ex.answer?`<div>Resposta esperada: ${H.Renderer.esc(ex.answer)}</div>`:''}${ex.explanation?`<div class="muted">${H.Renderer.esc(ex.explanation)}</div>`:''}`;
+    document.getElementById('submitAnswer').disabled=true;
+    const next=document.createElement('button'); next.textContent=session.index+1<session.items.length?'Próximo':'Finalizar';
+    next.onclick=nextExercise; fb.appendChild(next);
+    await H.DB.saveProfile(state);
+  }
+  async function nextExercise(){
+    session.index++;
+    if(session.index<session.items.length) return showExercise();
+    const ended={id:session.id,mode:session.mode,completedAt:new Date().toISOString(),count:session.items.length};
+    if(session.mode==='practice') state.practiceSessions.push(ended); else state.sessions.push(ended);
+    state.activeSession=null; state.stage=profile.role==='teacher'?5:Math.max(state.stage,H.Metrics.progress(state).stage);
+    await H.DB.saveProfile(state); dashboard();
+  }
+  async function report(){
+    const ex=session.items[session.index];
+    const reason=prompt('Problema: resposta errada, frase estranha, áudio, tradução, alternativas ou outro?');
+    if(!reason) return;
+    state.reports.push({exerciseId:ex.id,reason,at:new Date().toISOString()});
+    await H.DB.saveProfile(state); alert('Problema registrado para revisão.');
+  }
+  function showAudit(a){
+    const bad=a.core.invalid.length+a.b2Extended.invalid.length+a.practice.invalid.length;
+    document.getElementById('auditPanel').innerHTML=`<div class="card"><h3>Auditoria local</h3>
+      <p>Core: ${a.core.total} · B2 Extended: ${a.b2Extended.total} · Prática: ${a.practice.total}</p>
+      <p>${bad===0?'Nenhum erro estrutural detectado nos módulos novos.':bad+' inconsistências encontradas.'}</p>
+      <details><summary>Banco de prática</summary><pre>${H.Renderer.esc(JSON.stringify(a.practiceStats,null,2))}</pre></details></div>`;
+  }
+  async function exportData(){
+    const blob=new Blob([await H.DB.exportProfile(state)],{type:'application/json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`english-hub-${profile.id}-${Date.now()}.json`; a.click(); URL.revokeObjectURL(a.href);
+  }
+  function sw(){ if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.warn); }
+  document.addEventListener('DOMContentLoaded',()=>{profiles();sw()});
 })();

@@ -1,0 +1,8 @@
+.login{max-width:860px}
+.profiles{grid-template-columns:repeat(3,1fr)}
+.profile small{color:var(--muted);font-weight:600}
+.pilot-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.pilot-grid span,.retention span{display:grid;gap:4px;padding:12px;background:#071c2c;border-radius:12px}
+.retention{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+.pilot b{color:var(--mint)}
+@media(max-width:760px){.profiles{grid-template-columns:repeat(2,1fr)}.pilot-grid,.retention{grid-template-columns:1fr 1fr}}

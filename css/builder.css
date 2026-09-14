@@ -1,0 +1,5 @@
+.sentence-builder{display:grid;gap:14px}
+.built{min-height:64px;border:2px dashed var(--line);border-radius:14px;background:#071c2c;padding:18px;font-size:1.25rem}
+.word-bank{display:flex;flex-wrap:wrap;gap:9px}
+.word{background:#174a57;color:var(--ink);border:1px solid var(--mint)}
+.unlock{padding:11px 13px;border-radius:12px;background:#071c2c;border-left:3px solid var(--orange);color:var(--ink);font-size:.86rem}

@@ -2,16 +2,14 @@ window.EXERCISES = (() => {
   const raw = [
     ['L00A','listening','daily','A1',1,'Good morning. How are you today?','Qual foi a saudação?',['Bom dia','Boa noite','Até amanhã'],'Bom dia',['good morning']],
     ['L00B','listening','daily','A1',1,'I have breakfast at seven o’clock.','Que horas a pessoa toma café?',['Às sete','Às oito','Ao meio-dia'],'Às sete',['seven']],
-    ['S00A','speaking','daily','A1',1,'Diga seu nome em inglês.',null,[],'My name is Tacio.',['my name is']],
-    ['S00B','speaking','daily','A1',1,'Diga em inglês: “Eu moro no Brasil.”',null,[],'I live in Brazil.',['live','brazil']],
+    ['S00A','speaking','daily','A1',2,'Leia e repita em voz alta: “My name is Tacio.”',null,[],'My name is Tacio.',['my name is']],
+    ['S00B','speaking','daily','A1',2,'Leia e repita em voz alta: “I live in Brazil.”',null,[],'I live in Brazil.',['live','brazil']],
     ['R00A','reading','daily','A1',1,'The store opens at nine.','Que horas a loja abre?',['Às nove','Às dez','Às oito'],'Às nove',['nine']],
     ['R00B','reading','daily','A1',1,'Anna is at home with her family.','Com quem Anna está?',['Com a família','Com colegas','Sozinha'],'Com a família',['family']],
-    ['W00A','writing','daily','A1',1,'Escreva em inglês: “Boa tarde.”',null,[],'Good afternoon.',['good afternoon']],
-    ['W00B','writing','daily','A1',1,'Escreva em inglês: “Eu gosto de café.”',null,[],'I like coffee.',['like','coffee']],
     ['L00C','listening','fluency','A2',2,'Can you help me, please?','O que a pessoa está pedindo?',['Ajuda','Comida','Transporte'],'Ajuda',['help']],
     ['L00D','listening','fluency','A2',2,'I am going to work now.','Para onde a pessoa vai?',['Para o trabalho','Para casa','Para a escola'],'Para o trabalho',['work']],
-    ['S00C','speaking','fluency','A2',2,'Responda em inglês: “What do you do?”',null,[],'I am a nurse.',['nurse']],
-    ['S00D','speaking','fluency','A2',2,'Pergunte em inglês que horas são.',null,[],'What time is it?',['what time']],
+    ['S00C','speaking','fluency','A2',2,'Complete e fale: “I am a ___.” Use a sua profissão.',null,[],'I am a nurse.',['nurse']],
+    ['S00D','speaking','fluency','A2',2,'Leia, repita e depois fale sem olhar: “What time is it?”',null,[],'What time is it?',['what time']],
     ['R00C','reading','fluency','A2',2,'Please wait here for five minutes.','O que você deve fazer?',['Esperar aqui','Sair agora','Telefonar'],'Esperar aqui',['wait','here']],
     ['R00D','reading','fluency','A2',2,'Turn left after the bank.','Onde deve virar?',['À esquerda','À direita','Antes do banco'],'À esquerda',['left']],
     ['W00C','writing','fluency','A2',2,'Escreva uma resposta curta dizendo que está bem.',null,[],'I am fine, thank you.',['fine','thank']],
@@ -67,5 +65,6 @@ window.EXERCISES = (() => {
     ['L13','listening','emergency','B1',5,'Administer oxygen and prepare the defibrillator.','Quais duas ações foram solicitadas?',['Oxigênio e desfibrilador','Soro e curativo','Glicemia e transporte'],'Oxigênio e desfibrilador',['oxygen','defibrillator']],
     ['S13','speaking','interview','B1',5,'Diga que possui certificações offshore válidas.',null,[],'I hold valid offshore safety certifications.',['valid','offshore','certifications']]
   ];
-  return raw.map(([id,skill,domain,level,stage,audioOrText,prompt,choices,answer,keywords])=>({id,skill,domain,level,stage,audio:skill==='listening'?audioOrText:null,text:skill==='listening'?null:audioOrText,prompt,choices,answer,keywords}));
+  const base=raw.map(([id,skill,domain,level,stage,audioOrText,prompt,choices,answer,keywords,tokens=[]])=>({id,skill,domain,level,stage,audio:skill==='listening'?audioOrText:null,text:skill==='listening'?null:audioOrText,prompt,choices,answer,keywords,tokens}));
+  return [...window.FOUNDATION_BUILDERS,...window.FOUNDATION_SUPPORT,...window.CURRICULUM_EXERCISES,...base];
 })();
